@@ -1,1 +1,1 @@
-# Nabbihni
+' Nabbihni ' is a project based on the concept of alerting the drivers when they are feeling asleep while driving to avoid accidents and reduce this problem . Also workers on the worksite to improve the efficiency and assure that they are working and contributing .
