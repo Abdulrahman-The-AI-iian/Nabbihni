@@ -1,1 +1,81 @@
+import cv2
+import mediapipe as mp
+import time
+import threading
+import math
+import pygame
 
+pygame.mixer.init()
+pygame.mixer.music.load("alarm_2.mp3")  
+
+def calculate_EAR(landmarks, eye_indices, img_w, img_h):
+    points = [(int(landmarks[i].x * img_w), int(landmarks[i].y * img_h)) for i in eye_indices]
+
+    A = math.dist(points[1], points[5])
+    B = math.dist(points[2], points[4])
+    C = math.dist(points[0], points[3])
+
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+def play_alarm():
+    if not pygame.mixer.music.get_busy():
+        pygame.mixer.music.play(loops=-1)
+
+mp_face = mp.solutions.face_mesh
+face_mesh = mp_face.FaceMesh(max_num_faces=1)
+
+RIGHT_EYE = [33, 160, 158, 133, 153, 144]
+LEFT_EYE  = [362, 385, 387, 263, 373, 380]
+
+EAR_THRESH     = 0.21
+CLOSED_SECONDS = 4
+
+cap = cv2.VideoCapture(0)
+eye_closed_start = None
+alarm_on = False
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        img_h, img_w = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = face_mesh.process(rgb)
+
+        if result.multi_face_landmarks:
+            landmarks = result.multi_face_landmarks[0].landmark
+
+            left_EAR  = calculate_EAR(landmarks, LEFT_EYE, img_w, img_h)
+            right_EAR = calculate_EAR(landmarks, RIGHT_EYE, img_w, img_h)
+            avg_EAR   = (left_EAR + right_EAR) / 2.0
+
+            if avg_EAR < EAR_THRESH:
+                if eye_closed_start is None:
+                    eye_closed_start = time.time()
+                elif (time.time() - eye_closed_start) >= CLOSED_SECONDS and not alarm_on:
+                    print("Eyes closed! Alarm NOW...")
+                    alarm_on = True
+                    threading.Thread(target=play_alarm, daemon=True).start()
+            else:
+                eye_closed_start = None
+                if alarm_on:
+                    pygame.mixer.music.stop()
+                    alarm_on = False
+
+            cv2.putText(frame, f'EAR: {avg_EAR:.2f}', (30, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            status = "Closed" if avg_EAR < EAR_THRESH else "Open"
+            cv2.putText(frame, f'Eyes: {status}', (30, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 255), 2)
+
+        cv2.imshow("Driver Drowsiness Detector", frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
+
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
+    pygame.mixer.music.stop()
